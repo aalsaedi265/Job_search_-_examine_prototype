@@ -128,7 +128,6 @@ Job_application/
 │   ├── package.json
 │   └── vite.config.js
 │
-├── CLAUDE.md                       # Claude Code instructions
 └── README.md                       # This file
 ```
 
@@ -531,5 +530,3 @@ This is a personal project, but suggestions and feedback are welcome! Please ope
 MIT License
 
 ---
-
-**For detailed development guidelines and architecture notes, see [CLAUDE.md](./CLAUDE.md)**
