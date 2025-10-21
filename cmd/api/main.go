@@ -1,0 +1,128 @@
+package main
+
+import (
+	"context"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
+	"github.com/joho/godotenv"
+	"github.com/yourusername/jobapply/internal/database"
+	"github.com/yourusername/jobapply/internal/handlers"
+	"github.com/yourusername/jobapply/internal/services"
+)
+
+func main() {
+	// Load .env file
+	_ = godotenv.Load()
+
+	// Get config from env
+	databaseURL := os.Getenv("DATABASE_URL")
+	if databaseURL == "" {
+		log.Fatal("DATABASE_URL is required")
+	}
+
+	port := getEnv("PORT", "8080")
+	uploadDir := getEnv("UPLOAD_DIR", "./uploads")
+	maxUploadSize, _ := strconv.ParseInt(getEnv("MAX_UPLOAD_SIZE", "5242880"), 10, 64)
+
+	// Connect to database and run migrations
+	ctx := context.Background()
+	db, err := database.Connect(ctx, databaseURL)
+	if err != nil {
+		log.Fatalf("Database connection failed: %v", err)
+	}
+	defer db.Close()
+	log.Println("Connected to database successfully")
+
+	// Initialize browser manager for Phase 4 pause/resume (15 minute timeout)
+	browserManager := services.NewBrowserManager(15 * time.Minute)
+	defer browserManager.Shutdown()
+	log.Println("Browser manager initialized")
+
+	// Create handlers
+	h := handlers.New(db, uploadDir, maxUploadSize, browserManager)
+
+	// Setup router
+	r := chi.NewRouter()
+
+	// Middleware
+	r.Use(loggerMiddleware)
+	r.Use(cors.Handler(cors.Options{
+		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:5173"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
+		AllowCredentials: true,
+		MaxAge:           300,
+	}))
+
+	// Routes
+	r.Get("/health", h.Health)
+	r.Handle("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadDir))))
+
+	r.Route("/api/v1", func(r chi.Router) {
+		r.Post("/profile", h.CreateProfile)
+		r.Get("/profile/{id}", h.GetProfile)
+		r.Post("/profile/{id}/resume", h.UploadResume)
+		r.Post("/scrape", h.ScrapeJobs)
+		r.Get("/jobs", h.GetJobs)
+		r.Post("/apply", h.ApplyToJob)
+		r.Get("/applications/{user_id}", h.GetApplications)
+
+		// Phase 4: Pause/Resume endpoints
+		r.Post("/apply/{application_id}/resume", h.ResumeApplication)
+		r.Delete("/apply/{application_id}", h.CancelApplication)
+		r.Get("/apply/{application_id}/status", h.GetApplicationStatus)
+	})
+
+	// Start server
+	srv := &http.Server{
+		Addr:         ":" + port,
+		Handler:      r,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Graceful shutdown
+	go func() {
+		sigint := make(chan os.Signal, 1)
+		signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
+		<-sigint
+
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		if err := srv.Shutdown(ctx); err != nil {
+			log.Printf("Server shutdown error: %v", err)
+		}
+	}()
+
+	log.Printf("Server starting on port %s", port)
+	if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Server failed: %v", err)
+	}
+	log.Println("Server stopped")
+}
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// Simple logging middleware
+func loggerMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start))
+	})
+}

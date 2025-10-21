@@ -1,0 +1,41 @@
+# Binaries
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Environment files
+.env
+.env.local
+
+# Uploaded files
+uploads/*
+!uploads/.gitkeep
+
+# Chrome automation data
+chrome-data/
+
+CLAUDE.md
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+.claude
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go workspace file
+go.work
