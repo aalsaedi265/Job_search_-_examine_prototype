@@ -69,6 +69,7 @@ func main() {
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Post("/profile", h.CreateProfile)
 		r.Get("/profile/{id}", h.GetProfile)
+		r.Get("/profile/{id}/validate", h.ValidateProfile)
 		r.Post("/profile/{id}/resume", h.UploadResume)
 		r.Post("/scrape", h.ScrapeJobs)
 		r.Get("/jobs", h.GetJobs)
@@ -86,7 +87,7 @@ func main() {
 		Addr:         ":" + port,
 		Handler:      r,
 		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
+		WriteTimeout: 30 * time.Second, // Scraping should complete within 20s
 		IdleTimeout:  60 * time.Second,
 	}
 

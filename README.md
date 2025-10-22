@@ -128,7 +128,6 @@ Job_application/
 │   ├── package.json
 │   └── vite.config.js
 │
-├── CLAUDE.md                       # Claude Code instructions
 └── README.md                       # This file
 ```
 
@@ -521,15 +520,3 @@ npm install
 rm -rf node_modules/.vite
 npm run dev
 ```
-
-## Contributing
-
-This is a personal project, but suggestions and feedback are welcome! Please open an issue to discuss any changes.
-
-## License
-
-MIT License
-
----
-
-**For detailed development guidelines and architecture notes, see [CLAUDE.md](./CLAUDE.md)**

@@ -228,6 +228,76 @@ func (h *Handler) GetJobs(w http.ResponseWriter, r *http.Request) {
 	h.json(w, jobs, http.StatusOK)
 }
 
+// ValidateProfile checks if a profile is complete enough for job searching
+func (h *Handler) ValidateProfile(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if !h.validateUUID(w, id, "ID") {
+		return
+	}
+
+	profile, err := h.getUserProfile(r.Context(), id)
+	if err != nil {
+		h.error(w, "Profile not found", http.StatusNotFound)
+		return
+	}
+
+	// Calculate years of experience from work history
+	var totalYears float64
+	var missingFields []string
+
+	// Check required fields
+	if profile.FullName == "" {
+		missingFields = append(missingFields, "full_name")
+	}
+	if profile.Email == "" {
+		missingFields = append(missingFields, "email")
+	}
+	if len(profile.WorkHistory) == 0 {
+		missingFields = append(missingFields, "work_history")
+	} else {
+		// Calculate years of experience
+		for _, work := range profile.WorkHistory {
+			if work.StartDate != "" {
+				startDate, err := time.Parse("2006-01-02", work.StartDate)
+				if err == nil {
+					var endDate time.Time
+					if work.EndDate != "" {
+						endDate, err = time.Parse("2006-01-02", work.EndDate)
+						if err != nil {
+							endDate = time.Now()
+						}
+					} else {
+						endDate = time.Now() // Current job
+					}
+					years := endDate.Sub(startDate).Hours() / 24 / 365.25
+					totalYears += years
+				}
+			}
+		}
+	}
+
+	type ValidationResponse struct {
+		IsComplete        bool     `json:"is_complete"`
+		YearsOfExperience float64  `json:"years_of_experience"`
+		MissingFields     []string `json:"missing_fields,omitempty"`
+		Message           string   `json:"message,omitempty"`
+	}
+
+	response := ValidationResponse{
+		IsComplete:        len(missingFields) == 0,
+		YearsOfExperience: totalYears,
+		MissingFields:     missingFields,
+	}
+
+	if !response.IsComplete {
+		response.Message = "Please complete your profile before searching for jobs"
+	} else {
+		response.Message = fmt.Sprintf("Profile complete with %.1f years of experience", totalYears)
+	}
+
+	h.json(w, response, http.StatusOK)
+}
+
 // GetApplications gets applications for a user
 func (h *Handler) GetApplications(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "user_id")

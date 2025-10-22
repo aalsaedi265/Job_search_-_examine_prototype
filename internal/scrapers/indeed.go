@@ -46,8 +46,8 @@ func (s *IndeedScraper) Scrape(keywords, location string) ([]Job, error) {
 	ctx, cancel := chromedp.NewContext(s.allocCtx)
 	defer cancel()
 
-	// Set timeout (increased for Windows/Chrome startup)
-	ctx, cancel = context.WithTimeout(ctx, 120*time.Second)
+	// Set reasonable timeout (20 seconds is enough for modern Indeed pages)
+	ctx, cancel = context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 
 	// Build Indeed URL
@@ -60,24 +60,42 @@ func (s *IndeedScraper) Scrape(keywords, location string) ([]Job, error) {
 
 	var jobs []Job
 
-	// Navigate and scrape
+	// Navigate and scrape with modern Indeed selectors (2025)
 	err := chromedp.Run(ctx,
 		chromedp.Navigate(indeedURL),
-		chromedp.WaitVisible(`div[id="mosaic-provider-jobcards"]`, chromedp.ByQuery),
-		chromedp.Sleep(2*time.Second), // Wait for dynamic content
+		// Wait for job cards container to load
+		chromedp.WaitVisible(`.job_seen_beacon, .tapItem`, chromedp.ByQuery),
+		chromedp.Sleep(2*time.Second), // Give Indeed time to render JavaScript
 
 		chromedp.Evaluate(`
-			Array.from(document.querySelectorAll('.job_seen_beacon, .tapItem')).slice(0, 10).map(card => {
-				const titleEl = card.querySelector('.jobTitle span[title], .jobTitle span');
-				const companyEl = card.querySelector('.companyName');
-				const locationEl = card.querySelector('.companyLocation');
-				const linkEl = card.querySelector('a.jcs-JobTitle');
+			// Modern Indeed (2025) uses .job_seen_beacon for job cards
+			let jobCards = document.querySelectorAll('.job_seen_beacon');
+
+			// Fallback to .tapItem if no job_seen_beacon found
+			if (jobCards.length === 0) {
+				jobCards = document.querySelectorAll('.tapItem');
+			}
+
+			console.log("Found " + jobCards.length + " job cards on Indeed");
+
+			Array.from(jobCards).slice(0, 10).map(card => {
+				// Modern Indeed selectors (verified 2025)
+				const titleEl = card.querySelector('h2.jobTitle span') ||
+				                card.querySelector('h2.jobTitle a span');
+
+				const companyEl = card.querySelector('span.companyName');
+
+				const locationEl = card.querySelector('div.companyLocation');
+
+				// Link can be on the title or the card itself
+				const linkEl = card.querySelector('h2.jobTitle a') ||
+				               card.querySelector('a[data-jk]');
 
 				return {
 					title: titleEl ? titleEl.textContent.trim() : '',
 					company: companyEl ? companyEl.textContent.trim() : '',
 					location: locationEl ? locationEl.textContent.trim() : '',
-					url: linkEl ? 'https://www.indeed.com' + linkEl.getAttribute('href') : ''
+					url: linkEl ? (linkEl.href || ('https://www.indeed.com' + linkEl.getAttribute('href'))) : ''
 				};
 			});
 		`, &jobs),

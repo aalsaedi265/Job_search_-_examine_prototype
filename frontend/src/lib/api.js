@@ -27,6 +27,15 @@ export async function uploadResume(userId, file) {
   return response.json();
 }
 
+export async function validateProfile(userId) {
+  const response = await fetch(`${API_BASE}/profile/${userId}/validate`);
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to validate profile');
+  }
+  return response.json();
+}
+
 export async function scrapeJobs(keywords, location) {
   const response = await fetch(`${API_BASE}/scrape`, {
     method: 'POST',

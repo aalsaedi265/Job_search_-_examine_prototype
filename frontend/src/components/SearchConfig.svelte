@@ -1,12 +1,40 @@
 <script>
-  import { scrapeJobs } from '../lib/api';
+  import { onMount } from 'svelte';
+  import { scrapeJobs, validateProfile } from '../lib/api';
+  import { getUserId } from '../lib/store';
 
   let keywords = '';
   let location = '';
   let message = '';
   let loading = false;
+  let profileValid = false;
+  let yearsOfExperience = 0;
+  let validationMessage = '';
+  let checkingProfile = true;
+
+  onMount(async () => {
+    const userId = getUserId();
+    if (userId) {
+      try {
+        const validation = await validateProfile(userId);
+        profileValid = validation.is_complete;
+        yearsOfExperience = validation.years_of_experience || 0;
+        validationMessage = validation.message;
+      } catch (error) {
+        validationMessage = 'Unable to validate profile. Please complete your profile first.';
+      }
+    } else {
+      validationMessage = 'Please create a profile first.';
+    }
+    checkingProfile = false;
+  });
 
   async function handleScrape() {
+    if (!profileValid) {
+      message = 'Please complete your profile before searching for jobs';
+      return;
+    }
+
     if (!keywords || !location) {
       message = 'Please enter keywords and location';
       return;
@@ -35,6 +63,21 @@
 <div class="form-container">
   <h2>Search for Jobs</h2>
 
+  {#if checkingProfile}
+    <p class="description">Checking profile...</p>
+  {:else if !profileValid}
+    <div class="warning-box">
+      <strong>⚠️ Profile Incomplete</strong>
+      <p>{validationMessage}</p>
+      <p>Please complete your profile in the Profile tab before searching for jobs. Make sure to include your work history to calculate years of experience.</p>
+    </div>
+  {:else}
+    <div class="info-box">
+      <strong>✓ Profile Complete</strong>
+      <p>Years of Experience: <strong>{yearsOfExperience.toFixed(1)}</strong> years</p>
+    </div>
+  {/if}
+
   <p class="description">
     Scrape job listings from Indeed based on your search criteria.
   </p>
@@ -46,7 +89,7 @@
       type="text"
       bind:value={keywords}
       placeholder="e.g. Software Engineer"
-      disabled={loading}
+      disabled={loading || !profileValid}
     />
   </div>
 
@@ -57,11 +100,11 @@
       type="text"
       bind:value={location}
       placeholder="e.g. San Francisco, CA"
-      disabled={loading}
+      disabled={loading || !profileValid}
     />
   </div>
 
-  <button on:click={handleScrape} disabled={loading || !keywords || !location}>
+  <button on:click={handleScrape} disabled={loading || !keywords || !location || !profileValid}>
     {loading ? 'Scraping...' : 'Scrape Indeed Jobs'}
   </button>
 
@@ -74,5 +117,45 @@
   .description {
     color: #6b7280;
     margin-bottom: 1.5rem;
+  }
+
+  .warning-box {
+    background-color: #fef3c7;
+    border: 2px solid #f59e0b;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .warning-box strong {
+    color: #d97706;
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  .warning-box p {
+    color: #92400e;
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+  }
+
+  .info-box {
+    background-color: #d1fae5;
+    border: 2px solid #10b981;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .info-box strong {
+    color: #047857;
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  .info-box p {
+    color: #065f46;
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
   }
 </style>
