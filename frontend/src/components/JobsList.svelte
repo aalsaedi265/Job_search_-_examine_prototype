@@ -1,7 +1,6 @@
 <script>
   import { onMount } from 'svelte';
   import { getJobs, applyToJob } from '../lib/api';
-  import { getUserId } from '../lib/store';
 
   let jobs = [];
   let loading = false;
@@ -26,12 +25,6 @@
   }
 
   async function handleApply(jobId, jobTitle) {
-    const userId = getUserId();
-    if (!userId) {
-      alert('Please create a profile first!');
-      return;
-    }
-
     const confirmed = confirm(
       `Apply to this job?\n\n"${jobTitle}"\n\nThis will open a browser window and auto-fill the application form.`
     );
@@ -40,7 +33,7 @@
 
     applyingTo = jobId;
     try {
-      const result = await applyToJob(jobId, userId);
+      const result = await applyToJob(jobId);
 
       let resultMessage = `Application Status: ${result.status}\n\n${result.message}`;
 

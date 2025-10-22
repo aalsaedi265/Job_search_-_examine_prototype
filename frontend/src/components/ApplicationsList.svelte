@@ -1,7 +1,6 @@
 <script>
   import { onMount } from 'svelte';
   import { getApplications } from '../lib/api';
-  import { getUserId } from '../lib/store';
 
   let applications = [];
   let loading = false;
@@ -12,16 +11,10 @@
   });
 
   async function loadApplications() {
-    const userId = getUserId();
-    if (!userId) {
-      errorMessage = 'Please create a profile first';
-      return;
-    }
-
     loading = true;
     errorMessage = '';
     try {
-      applications = await getApplications(userId);
+      applications = await getApplications();
     } catch (error) {
       errorMessage = 'Error loading applications: ' + error.message;
       applications = [];

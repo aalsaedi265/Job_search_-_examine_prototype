@@ -28,6 +28,7 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	migrations := []string{
 		"migrations/001_initial_schema.up.sql",
 		"migrations/002_add_location_to_jobs.up.sql",
+		"migrations/003_add_authentication.up.sql",
 		"migrations/004_application_state.up.sql",
 	}
 
@@ -43,6 +44,7 @@ func Connect(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 			errMsg := err.Error()
 			if errMsg != "ERROR: relation \"user_profiles\" already exists (SQLSTATE 42P07)" &&
 				errMsg != "ERROR: column \"location\" of relation \"jobs\" already exists (SQLSTATE 42701)" &&
+				errMsg != "ERROR: column \"password_hash\" of relation \"user_profiles\" already exists (SQLSTATE 42701)" &&
 				errMsg != "ERROR: column \"paused_at\" of relation \"applications\" already exists (SQLSTATE 42701)" {
 				pool.Close()
 				return nil, fmt.Errorf("failed to run migration %s: %w", migration, err)

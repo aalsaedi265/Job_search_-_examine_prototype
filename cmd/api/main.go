@@ -67,19 +67,29 @@ func main() {
 	r.Handle("/uploads/*", http.StripPrefix("/uploads/", http.FileServer(http.Dir(uploadDir))))
 
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Post("/profile", h.CreateProfile)
-		r.Get("/profile/{id}", h.GetProfile)
-		r.Get("/profile/{id}/validate", h.ValidateProfile)
-		r.Post("/profile/{id}/resume", h.UploadResume)
-		r.Post("/scrape", h.ScrapeJobs)
-		r.Get("/jobs", h.GetJobs)
-		r.Post("/apply", h.ApplyToJob)
-		r.Get("/applications/{user_id}", h.GetApplications)
+		// Public routes (no auth required)
+		r.Post("/auth/signup", h.Signup)
+		r.Post("/auth/login", h.Login)
 
-		// Phase 4: Pause/Resume endpoints
-		r.Post("/apply/{application_id}/resume", h.ResumeApplication)
-		r.Delete("/apply/{application_id}", h.CancelApplication)
-		r.Get("/apply/{application_id}/status", h.GetApplicationStatus)
+		// Protected routes (auth required)
+		r.Group(func(r chi.Router) {
+			r.Use(handlers.AuthMiddleware)
+
+			r.Get("/auth/me", h.GetMe)
+			r.Post("/profile", h.CreateProfile)
+			r.Get("/profile", h.GetProfile)
+			r.Get("/profile/validate", h.ValidateProfile)
+			r.Post("/profile/resume", h.UploadResume)
+			r.Post("/scrape", h.ScrapeJobs)
+			r.Get("/jobs", h.GetJobs)
+			r.Post("/apply", h.ApplyToJob)
+			r.Get("/applications", h.GetApplications)
+
+			// Phase 4: Pause/Resume endpoints
+			r.Post("/apply/{application_id}/resume", h.ResumeApplication)
+			r.Delete("/apply/{application_id}", h.CancelApplication)
+			r.Get("/apply/{application_id}/status", h.GetApplicationStatus)
+		})
 	})
 
 	// Start server

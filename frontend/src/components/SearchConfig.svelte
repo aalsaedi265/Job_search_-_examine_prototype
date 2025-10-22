@@ -1,7 +1,6 @@
 <script>
   import { onMount } from 'svelte';
   import { scrapeJobs, validateProfile } from '../lib/api';
-  import { getUserId } from '../lib/store';
 
   let keywords = '';
   let location = '';
@@ -13,18 +12,13 @@
   let checkingProfile = true;
 
   onMount(async () => {
-    const userId = getUserId();
-    if (userId) {
-      try {
-        const validation = await validateProfile(userId);
-        profileValid = validation.is_complete;
-        yearsOfExperience = validation.years_of_experience || 0;
-        validationMessage = validation.message;
-      } catch (error) {
-        validationMessage = 'Unable to validate profile. Please complete your profile first.';
-      }
-    } else {
-      validationMessage = 'Please create a profile first.';
+    try {
+      const validation = await validateProfile();
+      profileValid = validation.is_complete;
+      yearsOfExperience = validation.years_of_experience || 0;
+      validationMessage = validation.message;
+    } catch (error) {
+      validationMessage = 'Unable to validate profile. Please complete your profile first.';
     }
     checkingProfile = false;
   });

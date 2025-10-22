@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/mail"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yourusername/jobapply/internal/models"
@@ -58,43 +56,33 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// CreateProfile creates or updates a user profile
+// CreateProfile updates the authenticated user's profile
 func (h *Handler) CreateProfile(w http.ResponseWriter, r *http.Request) {
+	userID := getUserIDFromContext(r.Context())
+	if userID == "" {
+		h.error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
 	var req models.UserProfile
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		h.error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
 
-	if req.FullName == "" || req.Email == "" {
-		h.error(w, "full_name and email are required", http.StatusBadRequest)
-		return
-	}
-
-	if _, err := mail.ParseAddress(req.Email); err != nil {
-		h.error(w, "Invalid email format", http.StatusBadRequest)
-		return
-	}
-
 	query := `
-		INSERT INTO user_profiles (full_name, email, phone, address, work_history, education, skills)
-		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (email) DO UPDATE SET
-			full_name = EXCLUDED.full_name,
-			phone = EXCLUDED.phone,
-			address = EXCLUDED.address,
-			work_history = EXCLUDED.work_history,
-			education = EXCLUDED.education,
-			skills = EXCLUDED.skills,
-			updated_at = NOW()
+		UPDATE user_profiles
+		SET phone = $1, address = $2, work_history = $3, education = $4, skills = $5, updated_at = NOW()
+		WHERE id = $6
 		RETURNING id, full_name, email, phone, address, work_history, education, resume_url, skills, created_at, updated_at
 	`
 
 	var profile models.UserProfile
 	err := h.db.QueryRow(r.Context(), query,
-		req.FullName, req.Email, req.Phone,
+		req.Phone,
 		toJSON(req.Address), toJSON(req.WorkHistory), toJSON(req.Education),
 		req.Skills,
+		userID,
 	).Scan(
 		&profile.ID, &profile.FullName, &profile.Email, &profile.Phone,
 		scanJSON(&profile.Address), scanJSON(&profile.WorkHistory), scanJSON(&profile.Education),
@@ -102,21 +90,22 @@ func (h *Handler) CreateProfile(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if err != nil {
-		h.error(w, fmt.Sprintf("Failed to create profile: %v", err), http.StatusInternalServerError)
+		h.error(w, fmt.Sprintf("Failed to update profile: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	h.json(w, profile, http.StatusCreated)
+	h.json(w, profile, http.StatusOK)
 }
 
-// GetProfile gets a profile by ID
+// GetProfile gets the authenticated user's profile
 func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if !h.validateUUID(w, id, "ID") {
+	userID := getUserIDFromContext(r.Context())
+	if userID == "" {
+		h.error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	profile, err := h.getUserProfile(r.Context(), id)
+	profile, err := h.getUserProfile(r.Context(), userID)
 	if err != nil {
 		if err.Error() == "profile not found" {
 			h.error(w, "Profile not found", http.StatusNotFound)
@@ -129,10 +118,11 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	h.json(w, *profile, http.StatusOK)
 }
 
-// UploadResume uploads a resume file
+// UploadResume uploads a resume file for the authenticated user
 func (h *Handler) UploadResume(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if !h.validateUUID(w, id, "ID") {
+	userID := getUserIDFromContext(r.Context())
+	if userID == "" {
+		h.error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
@@ -177,7 +167,7 @@ func (h *Handler) UploadResume(w http.ResponseWriter, r *http.Request) {
 
 	resumeURL := fmt.Sprintf("/uploads/%s", filename)
 
-	result, err := h.db.Exec(r.Context(), "UPDATE user_profiles SET resume_url = $1, updated_at = NOW() WHERE id = $2", resumeURL, id)
+	result, err := h.db.Exec(r.Context(), "UPDATE user_profiles SET resume_url = $1, updated_at = NOW() WHERE id = $2", resumeURL, userID)
 	if err != nil || result.RowsAffected() == 0 {
 		os.Remove(filePath)
 		h.error(w, "Profile not found", http.StatusNotFound)
@@ -228,14 +218,15 @@ func (h *Handler) GetJobs(w http.ResponseWriter, r *http.Request) {
 	h.json(w, jobs, http.StatusOK)
 }
 
-// ValidateProfile checks if a profile is complete enough for job searching
+// ValidateProfile checks if the authenticated user's profile is complete enough for job searching
 func (h *Handler) ValidateProfile(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if !h.validateUUID(w, id, "ID") {
+	userID := getUserIDFromContext(r.Context())
+	if userID == "" {
+		h.error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	profile, err := h.getUserProfile(r.Context(), id)
+	profile, err := h.getUserProfile(r.Context(), userID)
 	if err != nil {
 		h.error(w, "Profile not found", http.StatusNotFound)
 		return
@@ -298,10 +289,11 @@ func (h *Handler) ValidateProfile(w http.ResponseWriter, r *http.Request) {
 	h.json(w, response, http.StatusOK)
 }
 
-// GetApplications gets applications for a user
+// GetApplications gets applications for the authenticated user
 func (h *Handler) GetApplications(w http.ResponseWriter, r *http.Request) {
-	userID := chi.URLParam(r, "user_id")
-	if !h.validateUUID(w, userID, "user_id") {
+	userID := getUserIDFromContext(r.Context())
+	if userID == "" {
+		h.error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 

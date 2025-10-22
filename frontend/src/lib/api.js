@@ -1,23 +1,73 @@
 const API_BASE = '/api/v1';
 
-export async function createProfile(profileData) {
-  const response = await fetch(`${API_BASE}/profile`, {
+function getAuthHeaders() {
+  const token = localStorage.getItem('auth_token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token && { 'Authorization': `Bearer ${token}` })
+  };
+}
+
+// Auth endpoints
+export async function signup(fullName, email, password) {
+  const response = await fetch(`${API_BASE}/auth/signup`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(profileData)
+    body: JSON.stringify({ full_name: fullName, email, password })
   });
   if (!response.ok) {
     const error = await response.json();
-    throw new Error(error.error || 'Failed to create profile');
+    throw new Error(error.error || 'Failed to create account');
   }
   return response.json();
 }
 
-export async function uploadResume(userId, file) {
+export async function login(email, password) {
+  const response = await fetch(`${API_BASE}/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to login');
+  }
+  return response.json();
+}
+
+export async function getMe() {
+  const response = await fetch(`${API_BASE}/auth/me`, {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to get user info');
+  }
+  return response.json();
+}
+
+export async function createProfile(profileData) {
+  const response = await fetch(`${API_BASE}/profile`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(profileData)
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to update profile');
+  }
+  return response.json();
+}
+
+export async function uploadResume(file) {
+  const token = localStorage.getItem('auth_token');
   const formData = new FormData();
   formData.append('resume', file);
-  const response = await fetch(`${API_BASE}/profile/${userId}/resume`, {
+  const response = await fetch(`${API_BASE}/profile/resume`, {
     method: 'POST',
+    headers: {
+      ...(token && { 'Authorization': `Bearer ${token}` })
+    },
     body: formData
   });
   if (!response.ok) {
@@ -27,8 +77,10 @@ export async function uploadResume(userId, file) {
   return response.json();
 }
 
-export async function validateProfile(userId) {
-  const response = await fetch(`${API_BASE}/profile/${userId}/validate`);
+export async function validateProfile() {
+  const response = await fetch(`${API_BASE}/profile/validate`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.error || 'Failed to validate profile');
@@ -36,10 +88,21 @@ export async function validateProfile(userId) {
   return response.json();
 }
 
+export async function getProfile() {
+  const response = await fetch(`${API_BASE}/profile`, {
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to get profile');
+  }
+  return response.json();
+}
+
 export async function scrapeJobs(keywords, location) {
   const response = await fetch(`${API_BASE}/scrape`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ keywords, location })
   });
   if (!response.ok) {
@@ -50,7 +113,9 @@ export async function scrapeJobs(keywords, location) {
 }
 
 export async function getJobs() {
-  const response = await fetch(`${API_BASE}/jobs`);
+  const response = await fetch(`${API_BASE}/jobs`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.error || 'Failed to get jobs');
@@ -58,11 +123,11 @@ export async function getJobs() {
   return response.json();
 }
 
-export async function applyToJob(jobId, userId) {
+export async function applyToJob(jobId) {
   const response = await fetch(`${API_BASE}/apply`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ job_id: jobId, user_id: userId })
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ job_id: jobId })
   });
   if (!response.ok) {
     const error = await response.json();
@@ -71,8 +136,10 @@ export async function applyToJob(jobId, userId) {
   return response.json();
 }
 
-export async function getApplications(userId) {
-  const response = await fetch(`${API_BASE}/applications/${userId}`);
+export async function getApplications() {
+  const response = await fetch(`${API_BASE}/applications`, {
+    headers: getAuthHeaders()
+  });
   if (!response.ok) {
     const error = await response.json();
     throw new Error(error.error || 'Failed to get applications');
