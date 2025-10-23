@@ -15,6 +15,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/yourusername/jobapply/internal/database"
 	"github.com/yourusername/jobapply/internal/handlers"
+	"github.com/yourusername/jobapply/internal/middleware"
 	"github.com/yourusername/jobapply/internal/services"
 )
 
@@ -52,8 +53,21 @@ func main() {
 	// Setup router
 	r := chi.NewRouter()
 
-	// Middleware
+	// Security Middleware - Order matters!
+	// 1. Security headers first to protect all responses
+	r.Use(middleware.SecurityHeaders)
+
+	// 2. Rate limiting to prevent DDoS (60 requests per minute per IP)
+	rateLimiter := middleware.NewRateLimiter(60)
+	r.Use(rateLimiter.Middleware)
+
+	// 3. Request size limiting to prevent memory exhaustion (10MB max)
+	r.Use(middleware.MaxBytesMiddleware(10 * 1024 * 1024))
+
+	// 4. Logging for audit trail
 	r.Use(loggerMiddleware)
+
+	// 5. CORS - allow frontend to communicate
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   []string{"http://localhost:3000", "http://localhost:5173"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},

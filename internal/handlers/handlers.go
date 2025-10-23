@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,13 +9,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/yourusername/jobapply/internal/models"
 	"github.com/yourusername/jobapply/internal/services"
+	"github.com/yourusername/jobapply/internal/validation"
 )
 
 type Handler struct {
@@ -118,7 +119,7 @@ func (h *Handler) GetProfile(w http.ResponseWriter, r *http.Request) {
 	h.json(w, *profile, http.StatusOK)
 }
 
-// UploadResume uploads a resume file for the authenticated user
+// UploadResume uploads a resume file for the authenticated user with security checks
 func (h *Handler) UploadResume(w http.ResponseWriter, r *http.Request) {
 	userID := getUserIDFromContext(r.Context())
 	if userID == "" {
@@ -126,8 +127,9 @@ func (h *Handler) UploadResume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Limit form parsing size to prevent memory exhaustion
 	if err := r.ParseMultipartForm(h.maxUploadSize); err != nil {
-		h.error(w, "File too large", http.StatusBadRequest)
+		h.error(w, "File too large or invalid request", http.StatusBadRequest)
 		return
 	}
 
@@ -138,16 +140,48 @@ func (h *Handler) UploadResume(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	// Double-check file size to prevent bypasses
 	if header.Size > h.maxUploadSize {
-		h.error(w, "File too large", http.StatusBadRequest)
+		h.error(w, "File too large (max 5MB)", http.StatusBadRequest)
 		return
 	}
 
-	if !strings.HasSuffix(strings.ToLower(header.Filename), ".pdf") {
+	// Minimum file size check (prevent empty or tiny malicious files)
+	if header.Size < 100 {
+		h.error(w, "File too small to be a valid resume", http.StatusBadRequest)
+		return
+	}
+
+	// Sanitize original filename to prevent path traversal
+	sanitizedName := validation.SanitizeFilename(header.Filename)
+
+	// Validate file extension using whitelist
+	if !validation.ValidateFileExtension(sanitizedName, []string{".pdf"}) {
 		h.error(w, "Only PDF files allowed", http.StatusBadRequest)
 		return
 	}
 
+	// Read file content to verify it's actually a PDF (magic number check)
+	buffer := make([]byte, 512)
+	n, err := file.Read(buffer)
+	if err != nil && err != io.EOF {
+		h.error(w, "Failed to read file", http.StatusInternalServerError)
+		return
+	}
+
+	// Check PDF magic number signature (%PDF)
+	if n < 4 || !bytes.HasPrefix(buffer[:n], []byte("%PDF")) {
+		h.error(w, "Invalid PDF file (file content does not match PDF format)", http.StatusBadRequest)
+		return
+	}
+
+	// Reset file pointer to beginning for copying
+	if _, err := file.Seek(0, 0); err != nil {
+		h.error(w, "Failed to process file", http.StatusInternalServerError)
+		return
+	}
+
+	// Generate secure random filename (prevents guessing and overwrites)
 	filename := fmt.Sprintf("%s.pdf", uuid.New().String())
 	filePath := filepath.Join(h.uploadDir, filename)
 

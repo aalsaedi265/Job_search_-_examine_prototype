@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/mail"
 	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/yourusername/jobapply/internal/validation"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -41,19 +41,28 @@ func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate input
+	// Validate and sanitize input to prevent XSS and injection attacks
 	if req.FullName == "" || req.Email == "" || req.Password == "" {
 		h.error(w, "full_name, email, and password are required", http.StatusBadRequest)
 		return
 	}
 
-	if _, err := mail.ParseAddress(req.Email); err != nil {
+	// Sanitize full name (remove HTML, limit length)
+	req.FullName = validation.SanitizeString(req.FullName, 100)
+	if req.FullName == "" {
+		h.error(w, "Invalid full name", http.StatusBadRequest)
+		return
+	}
+
+	// Validate email format using regex to prevent injection
+	if !validation.ValidateEmail(req.Email) {
 		h.error(w, "Invalid email format", http.StatusBadRequest)
 		return
 	}
 
-	if len(req.Password) < 6 {
-		h.error(w, "Password must be at least 6 characters", http.StatusBadRequest)
+	// Validate password strength (6+ chars, must have letter and number)
+	if !validation.ValidatePassword(req.Password) {
+		h.error(w, "Password must be 6-128 characters with at least one letter and one number", http.StatusBadRequest)
 		return
 	}
 
@@ -108,8 +117,21 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate input to prevent injection attacks
 	if req.Email == "" || req.Password == "" {
 		h.error(w, "email and password are required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate email format
+	if !validation.ValidateEmail(req.Email) {
+		h.error(w, "Invalid email or password", http.StatusUnauthorized)
+		return
+	}
+
+	// Check password length to prevent DoS with huge passwords
+	if len(req.Password) > 128 {
+		h.error(w, "Invalid email or password", http.StatusUnauthorized)
 		return
 	}
 
