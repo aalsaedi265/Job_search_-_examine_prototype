@@ -4,20 +4,34 @@
   import SearchConfig from './components/SearchConfig.svelte';
   import JobsList from './components/JobsList.svelte';
   import ApplicationsList from './components/ApplicationsList.svelte';
-  import { isAuthenticated } from './lib/store';
+  import { isAuthenticated, clearAuth } from './lib/store';
 
   let authenticated = isAuthenticated();
   let currentTab = 'profile';
 
   function handleAuthSuccess(user) {
     authenticated = true;
+    currentTab = 'search';
+  }
+
+  function handleLogout() {
+    clearAuth();
+    authenticated = false;
     currentTab = 'profile';
+    window.location.reload();
   }
 </script>
 
 <main>
   <header>
-    <h1>Job Application Tool</h1>
+    <div class="header-content">
+      <h1>Job Application Tool</h1>
+      {#if authenticated}
+        <button class="logout-btn" on:click={handleLogout}>
+          Logout
+        </button>
+      {/if}
+    </div>
     {#if authenticated}
       <nav>
         <button class:active={currentTab === 'profile'} on:click={() => currentTab = 'profile'}>
