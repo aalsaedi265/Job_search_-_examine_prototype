@@ -1,9 +1,13 @@
 <script>
   import { onMount } from 'svelte';
-  import { createProfile, uploadResume, getProfile } from '../lib/api';
-  import { getUser } from '../lib/store';
+  import { createProfile, uploadResume, getProfile, changePassword, updateEmail } from '../lib/api';
+  import { getUser, setAuthToken, setUser } from '../lib/store';
+
+  export let onSaved = null;
 
   let user = getUser();
+  let fullName = '';
+  let email = '';
   let phone = '';
   let city = '';
   let state = '';
@@ -15,13 +19,20 @@
   let workDescription = '';
   let skills = '';
   let resumeFile = null;
+  let existingResumeUrl = '';
   let message = '';
   let loading = false;
   let workHistory = [];
+  let currentPassword = '';
+  let newPassword = '';
+  let confirmPassword = '';
+  let passwordMessage = '';
 
   onMount(async () => {
     try {
       const profile = await getProfile();
+      fullName = profile.full_name || '';
+      email = profile.email || user?.email || '';
       phone = profile.phone || '';
       if (profile.address) {
         city = profile.address.city || '';
@@ -30,8 +41,11 @@
       }
       workHistory = profile.work_history || [];
       skills = profile.skills ? profile.skills.join(', ') : '';
+      existingResumeUrl = profile.resume_url || '';
     } catch (error) {
       // Profile not complete yet, that's OK
+      email = user?.email || '';
+      fullName = user?.full_name || '';
     }
   });
 
@@ -40,7 +54,26 @@
     message = '';
 
     try {
+      // Handle email change if email was modified
+      const currentUser = getUser();
+      if (email && email !== currentUser?.email) {
+        try {
+          const result = await updateEmail(email);
+          if (result.token) {
+            setAuthToken(result.token);
+            // Update user info in localStorage with new email
+            const updatedUser = { ...currentUser, email: email };
+            setUser(updatedUser);
+            user = updatedUser; // Update local state
+          }
+          message = 'Email updated successfully. ';
+        } catch (error) {
+          message = 'Error updating email: ' + error.message + '. ';
+        }
+      }
+
       const profileData = {
+        full_name: fullName,
         phone: phone,
         address: {
           city: city,
@@ -56,9 +89,15 @@
 
       if (resumeFile) {
         await uploadResume(resumeFile);
-        message = 'Profile and resume saved successfully!';
+        message += 'Profile and resume saved successfully!';
+        existingResumeUrl = URL.createObjectURL(resumeFile); // Update to show new resume
       } else {
-        message = 'Profile saved successfully!';
+        message += 'Profile saved successfully!';
+      }
+
+      // Call the onSaved callback after successful save
+      if (onSaved) {
+        setTimeout(() => onSaved(), 500); // Small delay to show success message
       }
 
     } catch (error) {
@@ -98,13 +137,112 @@
   function handleFileChange(event) {
     resumeFile = event.target.files[0];
   }
+
+  async function handlePasswordChange() {
+    passwordMessage = '';
+
+    // Validation
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      passwordMessage = 'Error: All password fields are required';
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      passwordMessage = 'Error: New passwords do not match';
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      passwordMessage = 'Error: Password must be at least 6 characters';
+      return;
+    }
+
+    if (!/[a-zA-Z]/.test(newPassword) || !/[0-9]/.test(newPassword)) {
+      passwordMessage = 'Error: Password must contain at least one letter and one number';
+      return;
+    }
+
+    try {
+      await changePassword(currentPassword, newPassword);
+      passwordMessage = 'Password changed successfully!';
+      // Clear fields
+      currentPassword = '';
+      newPassword = '';
+      confirmPassword = '';
+    } catch (error) {
+      passwordMessage = 'Error: ' + error.message;
+    }
+  }
+
+  async function handleEmailChange() {
+    const currentUser = getUser();
+    if (!email || email === currentUser?.email) {
+      message = 'Error: Please enter a different email';
+      return;
+    }
+
+    try {
+      const result = await updateEmail(email);
+      // Update the token and user info in localStorage
+      if (result.token) {
+        setAuthToken(result.token);
+        const updatedUser = { ...currentUser, email: email };
+        setUser(updatedUser);
+        user = updatedUser;
+      }
+      message = 'Email updated successfully!';
+    } catch (error) {
+      message = 'Error: ' + error.message;
+    }
+  }
 </script>
 
 <div class="form-container">
   <h2>Your Profile</h2>
-  <p class="user-info">Logged in as: <strong>{user?.email}</strong></p>
 
   <form on:submit|preventDefault={handleSubmit}>
+    <div class="form-group">
+      <label for="fullName">Full Name *</label>
+      <input id="fullName" type="text" bind:value={fullName} placeholder="John Doe" required />
+    </div>
+
+    <div class="form-group">
+      <label for="email">Email *</label>
+      <input id="email" type="email" bind:value={email} placeholder="you@example.com" required />
+      <small>Changing your email will require a new authentication token</small>
+    </div>
+
+    <hr />
+
+    <h3>Change Password (Optional)</h3>
+    <div class="password-section">
+      <div class="form-group">
+        <label for="currentPassword">Current Password</label>
+        <input id="currentPassword" type="password" bind:value={currentPassword} placeholder="Enter current password" />
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="newPassword">New Password</label>
+          <input id="newPassword" type="password" bind:value={newPassword} placeholder="At least 6 characters" />
+        </div>
+        <div class="form-group">
+          <label for="confirmPassword">Confirm New Password</label>
+          <input id="confirmPassword" type="password" bind:value={confirmPassword} placeholder="Re-enter new password" />
+        </div>
+      </div>
+
+      <button type="button" class="password-btn" on:click={handlePasswordChange}>
+        Change Password
+      </button>
+
+      {#if passwordMessage}
+        <p class="message" class:error={passwordMessage.startsWith('Error')}>{passwordMessage}</p>
+      {/if}
+    </div>
+
+    <hr />
+
     <div class="form-group">
       <label for="phone">Phone *</label>
       <input id="phone" type="tel" bind:value={phone} placeholder="555-123-4567" required />
@@ -187,8 +325,14 @@
 
     <div class="form-group">
       <label for="resume">Resume (PDF)</label>
+      {#if existingResumeUrl}
+        <div class="resume-status">
+          <span class="resume-indicator">✓ Resume uploaded</span>
+          <a href={existingResumeUrl} target="_blank" rel="noopener noreferrer" class="view-resume">View Current</a>
+        </div>
+      {/if}
       <input id="resume" type="file" accept=".pdf" on:change={handleFileChange} />
-      <small>Upload your resume in PDF format</small>
+      <small>{existingResumeUrl ? 'Replace your resume by selecting a new PDF file' : 'Upload your resume in PDF format'}</small>
     </div>
 
     <button type="submit" disabled={loading}>
@@ -202,19 +346,6 @@
 </div>
 
 <style>
-  .user-info {
-    color: #ffffff;
-    margin-bottom: 1.5rem;
-    font-size: 1.1rem;
-    font-weight: 600;
-    letter-spacing: 1px;
-  }
-
-  .user-info strong {
-    color: #fce700;
-    text-shadow: 0 0 10px rgba(252, 231, 0, 0.5);
-  }
-
   .form-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -363,5 +494,80 @@
     font-size: 0.9rem;
     font-weight: 600;
     letter-spacing: 1px;
+  }
+
+  input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    background: rgba(0, 0, 0, 0.4);
+    border-color: #444;
+  }
+
+  .resume-status {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.8rem;
+    padding: 0.8rem;
+    background: rgba(0, 255, 159, 0.1);
+    border: 2px solid #00ff9f;
+    border-radius: 4px;
+  }
+
+  .resume-indicator {
+    color: #00ff9f;
+    font-weight: 700;
+    letter-spacing: 1px;
+  }
+
+  .view-resume {
+    color: #00f0ff;
+    text-decoration: none;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 0.4rem 1rem;
+    border: 2px solid #00f0ff;
+    transition: all 0.2s;
+    clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+  }
+
+  .view-resume:hover {
+    background: #00f0ff;
+    color: #000000;
+    box-shadow: 0 0 15px rgba(0, 240, 255, 0.5);
+  }
+
+  .password-section {
+    background: rgba(0, 0, 0, 0.4);
+    border: 2px solid #555;
+    border-left: 3px solid #ff003c;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.5);
+    clip-path: polygon(10px 0, 100% 0, 100% calc(100% - 10px), calc(100% - 10px) 100%, 0 100%, 0 10px);
+  }
+
+  .password-btn {
+    background: #ff003c;
+    color: #ffffff;
+    border: 3px solid #ff003c;
+    padding: 0.8rem 1.5rem;
+    cursor: pointer;
+    font-family: 'Saira Condensed', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    transition: all 0.2s;
+    box-shadow: 0 0 20px rgba(255, 0, 60, 0.4), 0 4px 0 #aa0028;
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+  }
+
+  .password-btn:hover {
+    background: #ffffff;
+    color: #ff003c;
+    border-color: #ff003c;
+    box-shadow: 0 0 35px rgba(255, 0, 60, 0.8), 0 2px 0 #aa0028;
+    transform: translateY(-3px);
   }
 </style>

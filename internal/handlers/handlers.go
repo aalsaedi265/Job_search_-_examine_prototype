@@ -73,13 +73,14 @@ func (h *Handler) CreateProfile(w http.ResponseWriter, r *http.Request) {
 
 	query := `
 		UPDATE user_profiles
-		SET phone = $1, address = $2, work_history = $3, education = $4, skills = $5, updated_at = NOW()
-		WHERE id = $6
+		SET full_name = $1, phone = $2, address = $3, work_history = $4, education = $5, skills = $6, updated_at = NOW()
+		WHERE id = $7
 		RETURNING id, full_name, email, phone, address, work_history, education, resume_url, skills, created_at, updated_at
 	`
 
 	var profile models.UserProfile
 	err := h.db.QueryRow(r.Context(), query,
+		req.FullName,
 		req.Phone,
 		toJSON(req.Address), toJSON(req.WorkHistory), toJSON(req.Education),
 		req.Skills,
@@ -250,6 +251,38 @@ func (h *Handler) GetJobs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.json(w, jobs, http.StatusOK)
+}
+
+// DeleteProfile deletes the authenticated user's profile and associated data
+func (h *Handler) DeleteProfile(w http.ResponseWriter, r *http.Request) {
+	userID := getUserIDFromContext(r.Context())
+	if userID == "" {
+		h.error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	// Get profile first to delete resume file
+	profile, err := h.getUserProfile(r.Context(), userID)
+	if err == nil && profile.ResumeURL != nil && *profile.ResumeURL != "" {
+		// Delete the resume file if it exists
+		filename := filepath.Base(*profile.ResumeURL)
+		filePath := filepath.Join(h.uploadDir, filename)
+		os.Remove(filePath) // Ignore errors - file might not exist
+	}
+
+	// Delete the user profile
+	result, err := h.db.Exec(r.Context(), "DELETE FROM user_profiles WHERE id = $1", userID)
+	if err != nil {
+		h.error(w, fmt.Sprintf("Failed to delete profile: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if result.RowsAffected() == 0 {
+		h.error(w, "Profile not found", http.StatusNotFound)
+		return
+	}
+
+	h.json(w, map[string]string{"message": "Profile deleted successfully"}, http.StatusOK)
 }
 
 // ValidateProfile checks if the authenticated user's profile is complete enough for job searching

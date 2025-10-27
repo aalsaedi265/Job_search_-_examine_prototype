@@ -90,8 +90,11 @@ func main() {
 			r.Use(handlers.AuthMiddleware)
 
 			r.Get("/auth/me", h.GetMe)
+			r.Put("/auth/password", h.ChangePassword)
+			r.Put("/auth/email", h.UpdateEmail)
 			r.Post("/profile", h.CreateProfile)
 			r.Get("/profile", h.GetProfile)
+			r.Delete("/profile", h.DeleteProfile)
 			r.Get("/profile/validate", h.ValidateProfile)
 			r.Post("/profile/resume", h.UploadResume)
 			r.Post("/scrape", h.ScrapeJobs)

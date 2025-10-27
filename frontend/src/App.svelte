@@ -1,6 +1,7 @@
 <script>
   import Auth from './components/Auth.svelte';
   import ProfileForm from './components/ProfileForm.svelte';
+  import ProfileDisplay from './components/ProfileDisplay.svelte';
   import SearchConfig from './components/SearchConfig.svelte';
   import JobsList from './components/JobsList.svelte';
   import ApplicationsList from './components/ApplicationsList.svelte';
@@ -8,17 +9,33 @@
 
   let authenticated = isAuthenticated();
   let currentTab = 'profile';
+  let profileMode = 'view'; // 'view' or 'edit'
 
   function handleAuthSuccess(user) {
     authenticated = true;
-    currentTab = 'search';
+    // Start at profile tab - ProfileDisplay will auto-switch to edit if no profile exists
+    currentTab = 'profile';
+    profileMode = 'view';
   }
 
   function handleLogout() {
     clearAuth();
     authenticated = false;
     currentTab = 'profile';
+    profileMode = 'view';
     window.location.reload();
+  }
+
+  function handleProfileSaved() {
+    profileMode = 'view';
+  }
+
+  function handleProfileEdit() {
+    profileMode = 'edit';
+  }
+
+  function handleProfileDeleted() {
+    handleLogout();
   }
 </script>
 
@@ -54,7 +71,13 @@
     {#if !authenticated}
       <Auth onAuthSuccess={handleAuthSuccess} />
     {:else if currentTab === 'profile'}
-      <ProfileForm />
+      {#if profileMode === 'view'}
+        {#key profileMode}
+          <ProfileDisplay onEdit={handleProfileEdit} onLogout={handleProfileDeleted} />
+        {/key}
+      {:else}
+        <ProfileForm onSaved={handleProfileSaved} />
+      {/if}
     {:else if currentTab === 'search'}
       <SearchConfig />
     {:else if currentTab === 'jobs'}

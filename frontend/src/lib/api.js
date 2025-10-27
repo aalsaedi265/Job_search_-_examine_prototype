@@ -99,6 +99,44 @@ export async function getProfile() {
   return response.json();
 }
 
+export async function deleteProfile() {
+  const response = await fetch(`${API_BASE}/profile`, {
+    method: 'DELETE',
+    headers: getAuthHeaders()
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to delete profile');
+  }
+  return response.json();
+}
+
+export async function changePassword(currentPassword, newPassword) {
+  const response = await fetch(`${API_BASE}/auth/password`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to change password');
+  }
+  return response.json();
+}
+
+export async function updateEmail(newEmail) {
+  const response = await fetch(`${API_BASE}/auth/email`, {
+    method: 'PUT',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ new_email: newEmail })
+  });
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to update email');
+  }
+  return response.json();
+}
+
 export async function scrapeJobs(keywords, location) {
   const response = await fetch(`${API_BASE}/scrape`, {
     method: 'POST',

@@ -33,6 +33,15 @@ type AuthResponse struct {
 	Name   string `json:"name"`
 }
 
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password"`
+	NewPassword     string `json:"new_password"`
+}
+
+type UpdateEmailRequest struct {
+	NewEmail string `json:"new_email"`
+}
+
 // Signup creates a new user account
 func (h *Handler) Signup(w http.ResponseWriter, r *http.Request) {
 	var req SignupRequest
@@ -251,6 +260,113 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), "user_id", userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// ChangePassword allows authenticated users to change their password
+func (h *Handler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	userID := getUserIDFromContext(r.Context())
+	if userID == "" {
+		h.error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req ChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate inputs
+	if req.CurrentPassword == "" || req.NewPassword == "" {
+		h.error(w, "current_password and new_password are required", http.StatusBadRequest)
+		return
+	}
+
+	// Validate new password strength
+	if !validation.ValidatePassword(req.NewPassword) {
+		h.error(w, "New password must be 6-128 characters with at least one letter and one number", http.StatusBadRequest)
+		return
+	}
+
+	// Get current password hash
+	var currentHash string
+	err := h.db.QueryRow(r.Context(), "SELECT password_hash FROM user_profiles WHERE id = $1", userID).
+		Scan(&currentHash)
+	if err != nil {
+		h.error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Verify current password
+	if err := bcrypt.CompareHashAndPassword([]byte(currentHash), []byte(req.CurrentPassword)); err != nil {
+		h.error(w, "Current password is incorrect", http.StatusUnauthorized)
+		return
+	}
+
+	// Hash new password
+	newHash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		h.error(w, "Failed to process new password", http.StatusInternalServerError)
+		return
+	}
+
+	// Update password
+	_, err = h.db.Exec(r.Context(), "UPDATE user_profiles SET password_hash = $1, updated_at = NOW() WHERE id = $2", string(newHash), userID)
+	if err != nil {
+		h.error(w, "Failed to update password", http.StatusInternalServerError)
+		return
+	}
+
+	h.json(w, map[string]string{"message": "Password changed successfully"}, http.StatusOK)
+}
+
+// UpdateEmail allows authenticated users to change their email
+func (h *Handler) UpdateEmail(w http.ResponseWriter, r *http.Request) {
+	userID := getUserIDFromContext(r.Context())
+	if userID == "" {
+		h.error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req UpdateEmailRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		h.error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	// Validate email format
+	if !validation.ValidateEmail(req.NewEmail) {
+		h.error(w, "Invalid email format", http.StatusBadRequest)
+		return
+	}
+
+	// Update email (will fail if email already exists due to unique constraint)
+	result, err := h.db.Exec(r.Context(), "UPDATE user_profiles SET email = $1, updated_at = NOW() WHERE id = $2", req.NewEmail, userID)
+	if err != nil {
+		if strings.Contains(err.Error(), "duplicate key") {
+			h.error(w, "Email already in use", http.StatusConflict)
+			return
+		}
+		h.error(w, fmt.Sprintf("Failed to update email: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if result.RowsAffected() == 0 {
+		h.error(w, "User not found", http.StatusNotFound)
+		return
+	}
+
+	// Generate new JWT with updated email
+	token, err := generateJWT(userID, req.NewEmail)
+	if err != nil {
+		h.error(w, "Failed to generate new token", http.StatusInternalServerError)
+		return
+	}
+
+	h.json(w, map[string]string{
+		"message": "Email updated successfully",
+		"token":   token,
+	}, http.StatusOK)
 }
 
 // getUserIDFromContext extracts the user ID from the request context
