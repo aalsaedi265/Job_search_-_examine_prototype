@@ -59,11 +59,12 @@ export async function createProfile(profileData) {
   return response.json();
 }
 
-export async function uploadResume(file) {
+export async function uploadResume(file, shouldParse = false) {
   const token = localStorage.getItem('auth_token');
   const formData = new FormData();
   formData.append('resume', file);
-  const response = await fetch(`${API_BASE}/profile/resume`, {
+  const url = `${API_BASE}/profile/resume${shouldParse ? '?parse=true' : ''}`;
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       ...(token && { 'Authorization': `Bearer ${token}` })

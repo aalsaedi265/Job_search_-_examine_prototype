@@ -14,10 +14,17 @@
   onMount(async () => {
     try {
       const validation = await validateProfile();
+      console.log('Validation response:', validation);
       profileValid = validation.is_complete;
       yearsOfExperience = validation.years_of_experience || 0;
       validationMessage = validation.message;
+
+      // Show missing fields in validation message for debugging
+      if (!validation.is_complete && validation.missing_fields) {
+        validationMessage = `Missing fields: ${validation.missing_fields.join(', ')}. ${validation.message}`;
+      }
     } catch (error) {
+      console.error('Validation error:', error);
       validationMessage = 'Unable to validate profile. Please complete your profile first.';
     }
     checkingProfile = false;

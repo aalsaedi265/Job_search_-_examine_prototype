@@ -27,10 +27,14 @@
   let newPassword = '';
   let confirmPassword = '';
   let passwordMessage = '';
+  let parseResume = false;
+  let editingIndex = -1;
 
   onMount(async () => {
     try {
       const profile = await getProfile();
+      console.log('Loaded profile:', profile);
+      console.log('Work history from backend:', profile.work_history);
       fullName = profile.full_name || '';
       email = profile.email || user?.email || '';
       phone = profile.phone || '';
@@ -40,12 +44,14 @@
         zipCode = profile.address.zip_code || '';
       }
       workHistory = profile.work_history || [];
+      console.log('Work history after assignment:', workHistory);
       skills = profile.skills ? profile.skills.join(', ') : '';
       existingResumeUrl = profile.resume_url || '';
     } catch (error) {
+      console.error('Error loading profile:', error);
       // Profile not complete yet, that's OK
       email = user?.email || '';
-      fullName = user?.full_name || '';
+      fullName = user?.name || '';
     }
   });
 
@@ -85,12 +91,25 @@
         skills: skills.split(',').map(s => s.trim()).filter(s => s)
       };
 
+      console.log('Saving profile with work_history:', workHistory);
+      console.log('Full profile data:', profileData);
+
       await createProfile(profileData);
 
       if (resumeFile) {
-        await uploadResume(resumeFile);
-        message += 'Profile and resume saved successfully!';
-        existingResumeUrl = URL.createObjectURL(resumeFile); // Update to show new resume
+        const uploadResponse = await uploadResume(resumeFile, parseResume);
+        console.log('Resume upload response:', uploadResponse);
+
+        // Update work history with parsed data from resume if parsing was enabled
+        if (parseResume && uploadResponse.work_history && uploadResponse.work_history.length > 0) {
+          workHistory = uploadResponse.work_history;
+          message += `Profile and resume saved! Extracted ${uploadResponse.work_history_count} work experience entries. Please review and edit if needed.`;
+        } else {
+          message += uploadResponse.message + ' Profile saved successfully!';
+        }
+
+        existingResumeUrl = uploadResponse.resume_url;
+        parseResume = false; // Reset checkbox
       } else {
         message += 'Profile saved successfully!';
       }
@@ -132,6 +151,20 @@
 
   function removeWork(index) {
     workHistory = workHistory.filter((_, i) => i !== index);
+  }
+
+  function editWork(index) {
+    editingIndex = index;
+  }
+
+  function saveEdit(index) {
+    workHistory = [...workHistory];
+    editingIndex = -1;
+    message = 'Work experience updated! Click Save Profile to persist changes.';
+  }
+
+  function cancelEdit() {
+    editingIndex = -1;
   }
 
   function handleFileChange(event) {
@@ -194,6 +227,23 @@
     } catch (error) {
       message = 'Error: ' + error.message;
     }
+  }
+
+  // Format date from YYYY-MM-DD to MM/YYYY
+  function formatDate(dateStr) {
+    if (!dateStr) return 'Present';
+
+    // Handle YYYY-MM-DD format
+    if (dateStr.includes('-')) {
+      const parts = dateStr.split('-');
+      // parts[0] = YYYY, parts[1] = MM, parts[2] = DD
+      // Remove leading zero from month if present
+      const month = parts[1].startsWith('0') ? parts[1].substring(1) : parts[1];
+      return `${month}/${parts[0]}`;
+    }
+
+    // Already in correct format or other format
+    return dateStr;
   }
 </script>
 
@@ -267,19 +317,96 @@
 
     <hr />
 
+    <div class="form-group">
+      <label for="skills">Skills (comma-separated)</label>
+      <input id="skills" type="text" bind:value={skills} placeholder="JavaScript, Python, React" />
+    </div>
+
+    <div class="form-group">
+      <label for="resume">Resume (PDF)</label>
+      {#if existingResumeUrl}
+        <div class="resume-status">
+          <span class="resume-indicator">✓ Resume uploaded</span>
+          <a href={existingResumeUrl} target="_blank" rel="noopener noreferrer" class="view-resume">View Current</a>
+        </div>
+      {/if}
+      <input id="resume" type="file" accept=".pdf" on:change={handleFileChange} />
+      <small>{existingResumeUrl ? 'Replace your resume by selecting a new PDF file' : 'Upload your resume in PDF format'}</small>
+
+      {#if resumeFile}
+        <div class="parse-option">
+          <label class="checkbox-label">
+            <input type="checkbox" bind:checked={parseResume} />
+            <span>Parse resume to extract work history (will replace current entries)</span>
+          </label>
+        </div>
+      {/if}
+    </div>
+
+    <hr />
+
     <h3>Work History (Required for Job Matching)</h3>
 
     {#if workHistory.length > 0}
       <div class="work-list">
         {#each workHistory as work, index}
           <div class="work-item">
-            <div class="work-header">
-              <strong>{work.title}</strong> at {work.company}
-              <button type="button" class="remove-btn" on:click={() => removeWork(index)}>×</button>
-            </div>
-            <div class="work-dates">
-              {work.start_date} - {work.end_date || 'Present'}
-            </div>
+            {#if editingIndex === index}
+              <div class="edit-mode">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Company</label>
+                    <input type="text" bind:value={work.company} placeholder="Acme Corp" />
+                  </div>
+                  <div class="form-group">
+                    <label>Job Title</label>
+                    <input type="text" bind:value={work.title} placeholder="Software Engineer" />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>Start Date</label>
+                    <input type="date" bind:value={work.start_date} />
+                  </div>
+                  <div class="form-group">
+                    <label>End Date (leave empty if current)</label>
+                    <input type="date" bind:value={work.end_date} />
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>Description</label>
+                  <textarea bind:value={work.description} placeholder="Brief description..." rows="2"></textarea>
+                </div>
+                <div class="edit-actions">
+                  <button type="button" class="save-edit-btn" on:click={() => saveEdit(index)}>Save</button>
+                  <button type="button" class="cancel-edit-btn" on:click={cancelEdit}>Cancel</button>
+                </div>
+              </div>
+            {:else}
+              <div class="work-header">
+                <div class="work-title-line">
+                  {#if work.company && work.title}
+                    <strong>{work.company}</strong> | {work.title}
+                  {:else if work.company}
+                    <strong>{work.company}</strong>
+                  {:else if work.title}
+                    <strong>{work.title}</strong>
+                  {:else}
+                    <strong>Work Experience</strong>
+                  {/if}
+                </div>
+                <div class="work-actions">
+                  <button type="button" class="edit-btn" on:click={() => editWork(index)}>✎</button>
+                  <button type="button" class="remove-btn" on:click={() => removeWork(index)}>×</button>
+                </div>
+              </div>
+              <div class="work-dates">
+                {formatDate(work.start_date)} - {formatDate(work.end_date)}
+              </div>
+              {#if work.description}
+                <div class="work-description">{@html work.description.replace(/\n/g, '<br>')}</div>
+              {/if}
+            {/if}
           </div>
         {/each}
       </div>
@@ -314,25 +441,6 @@
       </div>
 
       <button type="button" class="add-btn" on:click={addWorkHistory}>+ Add Work Experience</button>
-    </div>
-
-    <hr />
-
-    <div class="form-group">
-      <label for="skills">Skills (comma-separated)</label>
-      <input id="skills" type="text" bind:value={skills} placeholder="JavaScript, Python, React" />
-    </div>
-
-    <div class="form-group">
-      <label for="resume">Resume (PDF)</label>
-      {#if existingResumeUrl}
-        <div class="resume-status">
-          <span class="resume-indicator">✓ Resume uploaded</span>
-          <a href={existingResumeUrl} target="_blank" rel="noopener noreferrer" class="view-resume">View Current</a>
-        </div>
-      {/if}
-      <input id="resume" type="file" accept=".pdf" on:change={handleFileChange} />
-      <small>{existingResumeUrl ? 'Replace your resume by selecting a new PDF file' : 'Upload your resume in PDF format'}</small>
     </div>
 
     <button type="submit" disabled={loading}>
@@ -405,6 +513,51 @@
     letter-spacing: 1px;
   }
 
+  .work-description {
+    margin-top: 0.8rem;
+    color: #cccccc;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .work-title-line {
+    flex: 1;
+  }
+
+  .work-title-line strong {
+    color: #fce700;
+  }
+
+  .work-actions {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .edit-btn {
+    background: #00f0ff;
+    color: #000000;
+    border: 2px solid #00f0ff;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    font-size: 1.2rem;
+    font-weight: 900;
+    line-height: 1;
+    padding: 0;
+    transition: all 0.2s;
+    clip-path: polygon(4px 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%, 0 4px);
+    box-shadow: 0 0 15px rgba(0, 240, 255, 0.4);
+  }
+
+  .edit-btn:hover {
+    background: #ffffff;
+    color: #00f0ff;
+    box-shadow: 0 0 25px rgba(0, 240, 255, 0.8);
+    transform: scale(1.1);
+  }
+
   .remove-btn {
     background: #ff003c;
     color: #ffffff;
@@ -426,6 +579,63 @@
     color: #ff003c;
     box-shadow: 0 0 25px rgba(255, 0, 60, 0.8);
     transform: scale(1.1);
+  }
+
+  .edit-mode {
+    padding: 0.5rem 0;
+  }
+
+  .edit-mode .form-group {
+    margin-bottom: 1rem;
+  }
+
+  .edit-actions {
+    display: flex;
+    gap: 0.8rem;
+    margin-top: 1rem;
+  }
+
+  .save-edit-btn {
+    background: #00ff9f;
+    color: #000000;
+    border: 2px solid #00ff9f;
+    padding: 0.6rem 1.2rem;
+    cursor: pointer;
+    font-family: 'Saira Condensed', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+    box-shadow: 0 0 15px rgba(0, 255, 159, 0.4);
+  }
+
+  .save-edit-btn:hover {
+    background: #ffffff;
+    color: #00ff9f;
+    box-shadow: 0 0 25px rgba(0, 255, 159, 0.8);
+  }
+
+  .cancel-edit-btn {
+    background: transparent;
+    color: #ff003c;
+    border: 2px solid #ff003c;
+    padding: 0.6rem 1.2rem;
+    cursor: pointer;
+    font-family: 'Saira Condensed', sans-serif;
+    font-size: 1rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: all 0.2s;
+    clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px);
+  }
+
+  .cancel-edit-btn:hover {
+    background: #ff003c;
+    color: #ffffff;
+    box-shadow: 0 0 20px rgba(255, 0, 60, 0.6);
   }
 
   .add-work-section {
@@ -569,5 +779,37 @@
     border-color: #ff003c;
     box-shadow: 0 0 35px rgba(255, 0, 60, 0.8), 0 2px 0 #aa0028;
     transform: translateY(-3px);
+  }
+
+  .parse-option {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: rgba(0, 240, 255, 0.1);
+    border: 2px solid #00f0ff;
+    border-left: 4px solid #fce700;
+    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+    box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
+  }
+
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #00f0ff;
+    letter-spacing: 1px;
+  }
+
+  .checkbox-label input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+    accent-color: #00f0ff;
+  }
+
+  .checkbox-label span {
+    flex: 1;
   }
 </style>

@@ -202,14 +202,106 @@ func (h *Handler) UploadResume(w http.ResponseWriter, r *http.Request) {
 
 	resumeURL := fmt.Sprintf("/uploads/%s", filename)
 
-	result, err := h.db.Exec(r.Context(), "UPDATE user_profiles SET resume_url = $1, updated_at = NOW() WHERE id = $2", resumeURL, userID)
-	if err != nil || result.RowsAffected() == 0 {
-		os.Remove(filePath)
-		h.error(w, "Profile not found", http.StatusNotFound)
+	// Check if user wants to parse resume (default: false for manual control)
+	shouldParse := r.URL.Query().Get("parse") == "true"
+
+	var workHistory []models.WorkHistory
+	var message string
+
+	if shouldParse {
+		// Parse resume to extract work history
+		parsedHistory, err := services.ParseResume(filePath)
+		if err != nil {
+			fmt.Printf("Warning: Failed to parse resume: %v\n", err)
+			workHistory = []models.WorkHistory{}
+			message = "Resume uploaded. Parsing failed - please add work history manually."
+		} else {
+			workHistory = parsedHistory
+			message = fmt.Sprintf("Resume uploaded. Extracted %d work experience entries.", len(workHistory))
+		}
+
+		// Update profile with resume URL and extracted work history
+		query := `
+			UPDATE user_profiles
+			SET resume_url = $1, work_history = $2, updated_at = NOW()
+			WHERE id = $3
+		`
+		result, err := h.db.Exec(r.Context(), query, resumeURL, toJSON(workHistory), userID)
+		if err != nil || result.RowsAffected() == 0 {
+			os.Remove(filePath)
+			h.error(w, "Failed to update profile", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		// Only update resume URL, preserve existing work history
+		query := `
+			UPDATE user_profiles
+			SET resume_url = $1, updated_at = NOW()
+			WHERE id = $2
+		`
+		result, err := h.db.Exec(r.Context(), query, resumeURL, userID)
+		if err != nil || result.RowsAffected() == 0 {
+			os.Remove(filePath)
+			h.error(w, "Failed to update profile", http.StatusInternalServerError)
+			return
+		}
+		message = "Resume uploaded successfully. Work history preserved."
+	}
+
+	type ResumeUploadResponse struct {
+		ResumeURL        string              `json:"resume_url"`
+		Message          string              `json:"message"`
+		WorkHistory      []models.WorkHistory `json:"work_history"`
+		WorkHistoryCount int                 `json:"work_history_count"`
+	}
+
+	response := ResumeUploadResponse{
+		ResumeURL:        resumeURL,
+		Message:          message,
+		WorkHistory:      workHistory,
+		WorkHistoryCount: len(workHistory),
+	}
+
+	h.json(w, response, http.StatusOK)
+}
+
+// DebugResumeText returns raw text extracted from user's resume PDF for debugging
+func (h *Handler) DebugResumeText(w http.ResponseWriter, r *http.Request) {
+	userID := getUserIDFromContext(r.Context())
+	if userID == "" {
+		h.error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
 
-	h.json(w, map[string]string{"resume_url": resumeURL, "message": "Resume uploaded successfully"}, http.StatusOK)
+	// Get user's resume URL from database
+	var resumeURL string
+	query := `SELECT resume_url FROM user_profiles WHERE id = $1`
+	err := h.db.QueryRow(r.Context(), query, userID).Scan(&resumeURL)
+	if err != nil {
+		h.error(w, "No resume found", http.StatusNotFound)
+		return
+	}
+
+	if resumeURL == "" {
+		h.error(w, "No resume uploaded", http.StatusNotFound)
+		return
+	}
+
+	// Extract filename from URL and construct file path
+	filename := filepath.Base(resumeURL)
+	filePath := filepath.Join(h.uploadDir, filename)
+
+	// Extract text from PDF
+	text, err := services.ExtractResumeText(filePath)
+	if err != nil {
+		h.error(w, fmt.Sprintf("Failed to extract text: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	response := map[string]string{
+		"raw_text": text,
+	}
+	h.json(w, response, http.StatusOK)
 }
 
 // GetJobs gets all scraped jobs

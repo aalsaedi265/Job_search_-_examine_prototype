@@ -97,6 +97,7 @@ func main() {
 			r.Delete("/profile", h.DeleteProfile)
 			r.Get("/profile/validate", h.ValidateProfile)
 			r.Post("/profile/resume", h.UploadResume)
+			r.Get("/profile/resume/debug", h.DebugResumeText)
 			r.Post("/scrape", h.ScrapeJobs)
 			r.Get("/jobs", h.GetJobs)
 			r.Post("/apply", h.ApplyToJob)
