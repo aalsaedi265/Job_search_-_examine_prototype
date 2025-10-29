@@ -27,7 +27,6 @@
   let newPassword = '';
   let confirmPassword = '';
   let passwordMessage = '';
-  let parseResume = false;
   let editingIndex = -1;
 
   onMount(async () => {
@@ -97,19 +96,10 @@
       await createProfile(profileData);
 
       if (resumeFile) {
-        const uploadResponse = await uploadResume(resumeFile, parseResume);
+        const uploadResponse = await uploadResume(resumeFile, false);
         console.log('Resume upload response:', uploadResponse);
-
-        // Update work history with parsed data from resume if parsing was enabled
-        if (parseResume && uploadResponse.work_history && uploadResponse.work_history.length > 0) {
-          workHistory = uploadResponse.work_history;
-          message += `Profile and resume saved! Extracted ${uploadResponse.work_history_count} work experience entries. Please review and edit if needed.`;
-        } else {
-          message += uploadResponse.message + ' Profile saved successfully!';
-        }
-
+        message += uploadResponse.message + ' Profile saved successfully!';
         existingResumeUrl = uploadResponse.resume_url;
-        parseResume = false; // Reset checkbox
       } else {
         message += 'Profile saved successfully!';
       }
@@ -332,15 +322,6 @@
       {/if}
       <input id="resume" type="file" accept=".pdf" on:change={handleFileChange} />
       <small>{existingResumeUrl ? 'Replace your resume by selecting a new PDF file' : 'Upload your resume in PDF format'}</small>
-
-      {#if resumeFile}
-        <div class="parse-option">
-          <label class="checkbox-label">
-            <input type="checkbox" bind:checked={parseResume} />
-            <span>Parse resume to extract work history (will replace current entries)</span>
-          </label>
-        </div>
-      {/if}
     </div>
 
     <hr />
@@ -781,35 +762,4 @@
     transform: translateY(-3px);
   }
 
-  .parse-option {
-    margin-top: 1rem;
-    padding: 1rem;
-    background: rgba(0, 240, 255, 0.1);
-    border: 2px solid #00f0ff;
-    border-left: 4px solid #fce700;
-    clip-path: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
-    box-shadow: 0 0 15px rgba(0, 240, 255, 0.2);
-  }
-
-  .checkbox-label {
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    cursor: pointer;
-    font-size: 1rem;
-    font-weight: 600;
-    color: #00f0ff;
-    letter-spacing: 1px;
-  }
-
-  .checkbox-label input[type="checkbox"] {
-    width: 20px;
-    height: 20px;
-    cursor: pointer;
-    accent-color: #00f0ff;
-  }
-
-  .checkbox-label span {
-    flex: 1;
-  }
 </style>
