@@ -16,7 +16,6 @@ import (
 	"github.com/yourusername/jobapply/internal/database"
 	"github.com/yourusername/jobapply/internal/handlers"
 	"github.com/yourusername/jobapply/internal/middleware"
-	"github.com/yourusername/jobapply/internal/services"
 )
 
 func main() {
@@ -42,13 +41,8 @@ func main() {
 	defer db.Close()
 	log.Println("Connected to database successfully")
 
-	// Initialize browser manager for Phase 4 pause/resume (15 minute timeout)
-	browserManager := services.NewBrowserManager(15 * time.Minute)
-	defer browserManager.Shutdown()
-	log.Println("Browser manager initialized")
-
 	// Create handlers
-	h := handlers.New(db, uploadDir, maxUploadSize, browserManager)
+	h := handlers.New(db, uploadDir, maxUploadSize)
 
 	// Setup router
 	r := chi.NewRouter()
@@ -97,16 +91,8 @@ func main() {
 			r.Delete("/profile", h.DeleteProfile)
 			r.Get("/profile/validate", h.ValidateProfile)
 			r.Post("/profile/resume", h.UploadResume)
-			r.Get("/profile/resume/debug", h.DebugResumeText)
 			r.Post("/scrape", h.ScrapeJobs)
 			r.Get("/jobs", h.GetJobs)
-			r.Post("/apply", h.ApplyToJob)
-			r.Get("/applications", h.GetApplications)
-
-			// Phase 4: Pause/Resume endpoints
-			r.Post("/apply/{application_id}/resume", h.ResumeApplication)
-			r.Delete("/apply/{application_id}", h.CancelApplication)
-			r.Get("/apply/{application_id}/status", h.GetApplicationStatus)
 		})
 	})
 

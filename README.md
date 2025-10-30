@@ -73,20 +73,25 @@ Open your browser to `http://localhost:5173` and create your first profile!
 ## Features
 
 - **User Profile Management**: Store complete user profiles including work history, education, skills, and contact information
-- **Resume Upload**: Upload and store PDF resumes with secure file handling
+- **Resume Upload**: Upload and store PDF resumes (manual work history entry for accuracy)
 - **Search Configuration**: Configure job search preferences and keywords
-- **Job Scraping**: Basic job scraping from Indeed.com using ChromeDP
+- **Job Scraping**: API-based job scraping from The Muse (500 req/day free tier)
+- **Smart Caching**: 12-hour cache reduces API usage by ~90%
 - **Health Monitoring**: Built-in health check endpoint for monitoring
 - **PostgreSQL Database**: Robust data persistence with proper indexing
 - **Embedded Migrations**: Automatic database schema setup
+
+### Known Limitations
+- The Muse API only supports broad job categories (e.g., "Software Engineering"), not specific keywords (e.g., "software engineering manager")
+- Future: Migrate to Adzuna API for true keyword search
 
 ## Tech Stack
 
 ### Backend
 - **Language**: Go 1.21+
-- **Framework**: Chi router
+- **Framework**: Chi router (lightweight, composable)
 - **Database**: PostgreSQL 15+ with pgx/v5
-- **Browser Automation**: ChromeDP
+- **Job API**: The Muse API (HTTP client, no browser automation)
 
 ### Frontend
 - **Framework**: Svelte 5
@@ -107,10 +112,15 @@ Job_application/
 │   │   ├── models/
 │   │   │   └── models.go           # All data models
 │   │   ├── handlers/
+│   │   │   ├── auth.go             # Authentication handlers
 │   │   │   ├── handlers.go         # HTTP handlers
-│   │   │   └── scraping.go         # Job scraping handlers
-│   │   └── scrapers/
-│   │       └── indeed.go           # Indeed.com scraper
+│   │   │   └── scraping.go         # Job scraping with caching
+│   │   ├── scrapers/
+│   │   │   └── muse.go             # The Muse API client
+│   │   ├── middleware/
+│   │   │   └── security.go         # Security middleware
+│   │   └── validation/
+│   │       └── sanitize.go         # Input sanitization
 │   ├── uploads/                    # Uploaded resume storage
 │   ├── .env.example                # Environment template
 │   ├── Makefile                    # Common commands
@@ -132,10 +142,11 @@ Job_application/
 ```
 
 **Architecture Philosophy:**
-- **Lean backend**: 4 main Go files - extremely simple
+- **Lean backend**: 8 Go files organized by function - extremely simple
 - **No repository layer**: Handlers talk directly to database
 - **No config package**: Environment loading in main.go
-- **Direct approach**: Minimal abstraction for solo developer efficiency
+- **Direct approach**: Minimal abstraction for maximum maintainability
+- **No browser automation**: Simple HTTP API calls instead of ChromeDP complexity
 
 ## Configuration
 
